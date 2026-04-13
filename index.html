@@ -5,6 +5,7 @@
 <title>Escala Pro</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
 <style>
 body{
@@ -31,14 +32,6 @@ body{
 }
 
 .main{flex:1;padding:20px}
-
-.card{
- background:#162447;
- padding:15px;
- border-radius:12px;
- margin-bottom:15px;
-}
-
 .tab{display:none}
 
 input,select,button{
@@ -65,22 +58,27 @@ button{
  margin-top:5px;
 }
 
-/* CALENDÁRIO */
+.delBtn{
+ width:22px;
+ height:22px;
+ font-size:10px;
+ padding:0;
+ background:#ef4444;
+ border:none;
+ border-radius:5px;
+ color:white;
+ cursor:pointer;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+}
+
 .monthBar{
  display:flex;
  align-items:center;
+ justify-content:center;
  margin-bottom:10px;
-}
-
-.monthBar button{
- width:auto;
- padding:5px 10px;
-}
-
-#monthTitle{
- flex:1;
- text-align:center;
- font-weight:bold;
+ gap:10px;
 }
 
 .weekdays{
@@ -109,9 +107,20 @@ button{
  cursor:pointer;
 }
 
-.day:hover{background:#4facfe33}
+.selected{background:#ef4444!important}
+.weekend{background:#9333ea33}
 
-.selected{background:#4facfe!important}
+.popup{
+ position:fixed;
+ top:20px;
+ right:20px;
+ background:#22c55e;
+ color:#fff;
+ padding:12px 16px;
+ border-radius:10px;
+ font-weight:bold;
+ z-index:9999;
+}
 </style>
 </head>
 
@@ -126,33 +135,23 @@ button{
 <div class="nav" onclick="show('un')">🚫 Indisponível</div>
 <div class="nav" onclick="show('rel')">📊 Relatório</div>
 <div class="nav" onclick="show('pdf')">📄 PDF</div>
-
-<button onclick="resetAll()" style="background:#ef4444;margin-top:20px">
-🗑 Limpar Tudo
-</button>
 </div>
 
 <div class="main">
 
-<!-- FUNC -->
-<div id="tab-func" class="tab card">
-<h3>Funcionários</h3>
-<input id="fName" placeholder="Nome">
-<button onclick="addFunc()">Adicionar</button>
+<div id="tab-func" class="tab">
+<input id="fName" placeholder="Nome do funcionário">
+<button onclick="addFunc()">Adicionar Funcionário</button>
 <div id="fList"></div>
 </div>
 
-<!-- LOC -->
-<div id="tab-loc" class="tab card">
-<h3>Locais</h3>
-<input id="lName" placeholder="Local">
-<button onclick="addLoc()">Adicionar</button>
+<div id="tab-loc" class="tab">
+<input id="lName" placeholder="Nome do local">
+<button onclick="addLoc()">Adicionar Local</button>
 <div id="lList"></div>
 </div>
 
-<!-- ESCALA -->
-<div id="tab-esc" class="tab card">
-<h3>📅 Escala</h3>
+<div id="tab-esc" class="tab">
 
 <select id="fSel"></select>
 <select id="lSel"></select>
@@ -170,43 +169,53 @@ button{
 
 <div id="cal" class="calendar"></div>
 
-<div>📅 <span id="dateSel">Nenhuma</span></div>
+<div>📅 <span id="dateSel"></span></div>
 
 <button onclick="addShift()">Salvar Escala</button>
 </div>
 
-<!-- INDISPONIBILIDADE -->
-<div id="tab-un" class="tab card">
-<h3>🚫 Indisponibilidade</h3>
+<div id="tab-un" class="tab">
+<h3>🚫 Indisponível</h3>
 
 <select id="uSel"></select>
 <input type="date" id="uDate">
-
 <button onclick="addBlock()">Bloquear</button>
 
 <div id="uList"></div>
 </div>
 
-<!-- REL -->
-<div id="tab-rel" class="tab card">
-<h3>Relatório</h3>
+<div id="tab-rel" class="tab">
+<h3>📊 Relatório</h3>
 <div id="rel"></div>
 </div>
 
-<!-- PDF -->
-<div id="tab-pdf" class="tab card">
-<h3>PDF</h3>
+<div id="tab-pdf" class="tab">
 <button onclick="exportPDF()">Gerar PDF</button>
+</div>
+
 </div>
 
 <script>
 
 let funcs=[], locs=[], shifts={}, block={}, selected=null;
-let currentMonth = new Date();
+let currentMonth=new Date();
 
-/* STORAGE */
+const fName=document.getElementById("fName");
+const lName=document.getElementById("lName");
+const fList=document.getElementById("fList");
+const lList=document.getElementById("lList");
+const fSel=document.getElementById("fSel");
+const lSel=document.getElementById("lSel");
+const uSel=document.getElementById("uSel");
+const uDate=document.getElementById("uDate");
+const uList=document.getElementById("uList");
+const cal=document.getElementById("cal");
+const rel=document.getElementById("rel");
+const dateSel=document.getElementById("dateSel");
+const monthTitle=document.getElementById("monthTitle");
+
 function save(){
- localStorage.setItem('escala', JSON.stringify({funcs,locs,shifts,block}));
+ localStorage.setItem('escala',JSON.stringify({funcs,locs,shifts,block}));
 }
 
 function load(){
@@ -219,102 +228,77 @@ function load(){
  }
 }
 
-/* NAV */
 function show(t){
  document.querySelectorAll('.tab').forEach(e=>e.style.display='none');
  document.getElementById('tab-'+t).style.display='block';
 }
 
-/* FORMAT */
-function format(d){
- let [y,m,da]=d.split('-');
+function formatDate(d){
+ let [y,m,da]=d.split("-");
  return `${da}/${m}/${y}`;
 }
 
-/* FUNC */
 function addFunc(){
- if(fName.value){
-  funcs.push(fName.value);
+ if(fName.value.trim()){
+  funcs.push(fName.value.trim());
   fName.value='';
-  save();render();
+  save(); render();
  }
 }
 
-/* LOC */
 function addLoc(){
- if(lName.value){
-  locs.push(lName.value);
+ if(lName.value.trim()){
+  locs.push(lName.value.trim());
   lName.value='';
-  save();render();
+  save(); render();
  }
 }
 
-/* CALENDÁRIO */
-function changeMonth(offset){
- currentMonth.setMonth(currentMonth.getMonth()+offset);
+function removeFunc(i){ funcs.splice(i,1); save(); render(); }
+function removeLoc(i){ locs.splice(i,1); save(); render(); }
+
+function changeMonth(o){
+ currentMonth.setMonth(currentMonth.getMonth()+o);
  renderCal();
 }
 
-function renderCal(){
-
- cal.innerHTML='';
-
- let year = currentMonth.getFullYear();
- let month = currentMonth.getMonth();
-
- monthTitle.innerText =
- currentMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).toUpperCase();
-
- let firstDay = new Date(year, month, 1);
- let lastDay = new Date(year, month+1, 0);
-
- for(let i=0;i<firstDay.getDay();i++){
-  cal.innerHTML += `<div></div>`;
- }
-
- for(let d=1; d<=lastDay.getDate(); d++){
-
-  let date = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-
-  let mark = shifts[date] ? "<br><small>📌</small>" : "";
-
-  cal.innerHTML += `
-  <div class="day" onclick="selectDate('${date}',this)">
-   ${String(d).padStart(2,'0')}
-   ${mark}
-  </div>`;
- }
-}
-
-function selectDate(d,el){
+function selectDate(d){
  selected=d;
- document.querySelectorAll('.day').forEach(e=>e.classList.remove('selected'));
- el.classList.add('selected');
- dateSel.innerText=format(d);
+ dateSel.innerText=formatDate(d);
  render();
 }
 
-/* ESCALA */
 function addShift(){
+
  if(!selected) return alert("Selecione uma data");
 
- if(block[selected]?.includes(String(fSel.value))){
-  return alert("Funcionário indisponível nesse dia!");
+ let f=fSel.value;
+
+ if(block[selected]?.includes(String(f))){
+  return alert("Funcionário indisponível!");
  }
 
  if(!shifts[selected]) shifts[selected]=[];
 
- shifts[selected].push({
-  f:fSel.value,
-  l:lSel.value
- });
+ if(shifts[selected].some(s=>s.f===f)){
+  return alert("Funcionário já escalado nesse dia!");
+ }
 
- save();render();
+ let l=lSel.value;
+
+ shifts[selected].push({f,l});
+
+ save();
+ render();
+
+ popup("Escala salva com sucesso!");
 }
 
-/* BLOQUEIO */
 function addBlock(){
- let f=String(uSel.value), d=uDate.value;
+ let f=uSel.value;
+ let d=uDate.value;
+
+ if(!d) return alert("Selecione uma data");
 
  if(!block[d]) block[d]=[];
 
@@ -322,45 +306,69 @@ function addBlock(){
   block[d].push(f);
  }
 
- save();render();
+ save();
+ render();
+
+ popup("Funcionário bloqueado!");
 }
 
 function removeBlock(d,f){
  block[d]=block[d].filter(x=>x!=f);
  if(!block[d].length) delete block[d];
-
- save();render();
+ save(); render();
 }
 
-/* RENDER */
+/* NOVO: REMOVER ESCALA */
+function removeShift(d,i){
+
+ shifts[d].splice(i,1);
+
+ if(shifts[d].length === 0){
+  delete shifts[d];
+ }
+
+ save();
+ render();
+
+ popup("Escala removida!");
+}
+
+function popup(msg){
+ let div=document.createElement("div");
+ div.className="popup";
+ div.innerText=msg;
+ document.body.appendChild(div);
+ setTimeout(()=>div.remove(),2500);
+}
+
 function render(){
 
- fList.innerHTML=funcs.map(f=>`<div class="item">${f}</div>`).join('');
- lList.innerHTML=locs.map(l=>`<div class="item">${l}</div>`).join('');
+ fList.innerHTML=funcs.map((f,i)=>
+ `<div class="item">${f}
+ <button class="delBtn" onclick="removeFunc(${i})">X</button></div>`).join('');
 
- // 🔥 FINAL: NOME + (INDISPONÍVEL)
+ lList.innerHTML=locs.map((l,i)=>
+ `<div class="item">${l}
+ <button class="delBtn" onclick="removeLoc(${i})">X</button></div>`).join('');
+
  fSel.innerHTML = funcs.map((f,i)=>{
-
-  let indisponivel = selected && block[selected]?.includes(String(i));
-
-  return `
-  <option value="${i}" ${indisponivel ? 'disabled style="color:#9ca3af;"' : ''}>
-   ${f}${indisponivel ? ' (Indisponível)' : ''}
+  let ind = selected && block[selected]?.includes(String(i));
+  return `<option value="${i}" ${ind?'disabled style="color:#9ca3af;"':''}>
+   ${f}${ind?' (Indisponível)':''}
   </option>`;
-
  }).join('');
 
- lSel.innerHTML=locs.map(l=>`<option>${l}</option>`).join('');
+ lSel.innerHTML=locs.map(l=>`<option value="${l}">${l}</option>`).join('');
 
  uSel.innerHTML=funcs.map((f,i)=>`<option value="${i}">${f}</option>`).join('');
 
- uList.innerHTML='';
+ uList.innerHTML="";
  for(let d in block){
   block[d].forEach(f=>{
    uList.innerHTML+=`
    <div class="item">
-    ${format(d)} - ${funcs[f]}
-    <button onclick="removeBlock('${d}',${f})" style="background:#ef4444;width:auto">X</button>
+    ${formatDate(d)} - ${funcs[f]}
+    <button class="delBtn" onclick="removeBlock('${d}','${f}')">X</button>
    </div>`;
   });
  }
@@ -369,79 +377,79 @@ function render(){
  renderCal();
 }
 
-/* REL */
+/* RELATÓRIO COM BOTÃO EXCLUIR */
 function renderRel(){
- rel.innerHTML='';
+ rel.innerHTML="";
+
  Object.keys(shifts).sort().forEach(d=>{
-  rel.innerHTML+=`<h4>${format(d)}</h4>`;
-  shifts[d].forEach(s=>{
-   rel.innerHTML+=`<div class="item">${funcs[s.f]} - ${s.l}</div>`;
+  rel.innerHTML+=`<h4>${formatDate(d)}</h4>`;
+
+  shifts[d].forEach((s,i)=>{
+   rel.innerHTML+=`
+   <div class="item">
+    ${funcs[s.f]} - ${s.l}
+    <button class="delBtn" onclick="removeShift('${d}',${i})">X</button>
+   </div>`;
   });
  });
 }
 
-/* RESET */
-function resetAll(){
- if(confirm("Apagar tudo?")){
-  localStorage.clear();
-  location.reload();
+function renderCal(){
+
+ cal.innerHTML="";
+
+ let y=currentMonth.getFullYear();
+ let m=currentMonth.getMonth();
+
+ monthTitle.innerText =
+ currentMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).toUpperCase();
+
+ let first=new Date(y,m,1);
+ let last=new Date(y,m+1,0);
+
+ for(let i=0;i<first.getDay();i++) cal.innerHTML+="<div></div>";
+
+ for(let d=1;d<=last.getDate();d++){
+  let date=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  let cls="day";
+
+  if(new Date(date).getDay()>=6) cls+=" weekend";
+  if(selected===date) cls="day selected";
+
+  cal.innerHTML+=`<div class="${cls}" onclick="selectDate('${date}')">${d}</div>`;
  }
 }
 
-/* PDF */
+/* PDF EM FORMATO PLANILHA */
 function exportPDF(){
+
  const { jsPDF } = window.jspdf;
  const doc = new jsPDF();
 
- let y = 20;
+ doc.setFontSize(12);
+ doc.text("SECRETARIA DE PLANEJAMENTO URBANO E MEIO AMBIENTE",105,10,{align:"center"});
 
- doc.text("SECRETARIA PLANEJAMENTO URBANO E MEIO AMBIENTE",105,y,{align:"center"});
- y+=10;
+ let rows=[];
 
- let datas = Object.keys(shifts).sort();
-
- datas.forEach(d=>{
-  let dia=new Date(d).toLocaleDateString('pt-BR',{weekday:'long'}).toUpperCase();
-
-  doc.setFillColor(220,220,220);
-  doc.rect(10,y,190,8,"F");
-  doc.text(`${dia} ${format(d)}`,12,y+6);
-
-  y+=8;
-
-  let locais={};
-
+ Object.keys(shifts).sort().forEach(d=>{
   shifts[d].forEach(s=>{
-   if(!locais[s.l]) locais[s.l]=[];
-   locais[s.l].push(funcs[s.f]);
+   rows.push([
+    formatDate(d),
+    funcs[s.f],
+    s.l
+   ]);
   });
+ });
 
-  for(let l in locais){
-   doc.setFillColor(180,200,230);
-   doc.rect(10,y,190,8,"F");
-   doc.text(l.toUpperCase(),12,y+6);
-
-   y+=8;
-
-   locais[l].forEach(nome=>{
-    doc.rect(10,y,190,8);
-    doc.text(nome,12,y+6);
-    y+=8;
-   });
-  }
-
-  y+=5;
-
-  if(y>270){
-   doc.addPage();
-   y=20;
-  }
+ doc.autoTable({
+  startY:20,
+  head:[["Data","Funcionário","Local"]],
+  body:rows
  });
 
  doc.save("escala.pdf");
 }
 
-/* INIT */
 load();
 render();
 show('func');
