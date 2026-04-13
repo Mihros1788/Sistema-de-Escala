@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Escala Pro</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body{
+ margin:0;
+ font-family:Arial;
+ display:flex;
+ min-height:100vh;
+ background:#0f172a;
+ color:#e5e7eb;
+}
+
+.sidebar{
+ width:230px;
+ background:#020617;
+ padding:20px;
+}
+
+.nav{
+ padding:12px;
+ margin-bottom:10px;
+ background:rgba(255,255,255,0.05);
+ border-radius:10px;
+ cursor:pointer;
+}
+
+.main{flex:1;padding:20px}
+
+.card{
+ background:#162447;
+ padding:15px;
+ border-radius:12px;
+ margin-bottom:15px;
+}
+
+.tab{display:none}
+
+input,select,button{
+ padding:10px;
+ margin:5px 0;
+ border-radius:8px;
+ border:none;
+ width:100%;
+}
+
+button{
+ background:linear-gradient(135deg,#4facfe,#00f2fe);
+ color:white;
+ font-weight:bold;
+ cursor:pointer;
+}
+
+.item{
+ display:flex;
+ justify-content:space-between;
+ padding:8px;
+ background:rgba(255,255,255,0.05);
+ border-radius:8px;
+ margin-top:5px;
+}
+
+/* CALENDÁRIO */
+.monthBar{
+ display:flex;
+ align-items:center;
+ margin-bottom:10px;
+}
+
+.monthBar button{
+ width:auto;
+ padding:5px 10px;
+}
+
+#monthTitle{
+ flex:1;
+ text-align:center;
+ font-weight:bold;
+}
+
+.weekdays{
+ display:grid;
+ grid-template-columns:repeat(7,1fr);
+ text-align:center;
+ font-size:12px;
+ opacity:.7;
+ margin-bottom:5px;
+}
+
+.calendar{
+ display:grid;
+ grid-template-columns:repeat(7,1fr);
+ gap:5px;
+ background:#0b1224;
+ padding:10px;
+ border-radius:10px;
+}
+
+.day{
+ padding:12px;
+ text-align:center;
+ background:#162447;
+ border-radius:6px;
+ cursor:pointer;
+}
+
+.day:hover{background:#4facfe33}
+
+.selected{background:#4facfe!important}
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+<h3>📌 Escala Pro</h3>
+
+<div class="nav" onclick="show('func')">👤 Funcionários</div>
+<div class="nav" onclick="show('loc')">🏢 Locais</div>
+<div class="nav" onclick="show('esc')">📅 Escala</div>
+<div class="nav" onclick="show('un')">🚫 Indisponível</div>
+<div class="nav" onclick="show('rel')">📊 Relatório</div>
+<div class="nav" onclick="show('pdf')">📄 PDF</div>
+
+<button onclick="resetAll()" style="background:#ef4444;margin-top:20px">
+🗑 Limpar Tudo
+</button>
+</div>
+
+<div class="main">
+
+<!-- FUNC -->
+<div id="tab-func" class="tab card">
+<h3>Funcionários</h3>
+<input id="fName" placeholder="Nome">
+<button onclick="addFunc()">Adicionar</button>
+<div id="fList"></div>
+</div>
+
+<!-- LOC -->
+<div id="tab-loc" class="tab card">
+<h3>Locais</h3>
+<input id="lName" placeholder="Local">
+<button onclick="addLoc()">Adicionar</button>
+<div id="lList"></div>
+</div>
+
+<!-- ESCALA -->
+<div id="tab-esc" class="tab card">
+<h3>📅 Escala</h3>
+
+<select id="fSel"></select>
+<select id="lSel"></select>
+
+<div class="monthBar">
+<button onclick="changeMonth(-1)">⬅</button>
+<div id="monthTitle"></div>
+<button onclick="changeMonth(1)">➡</button>
+</div>
+
+<div class="weekdays">
+<div>Dom</div><div>Seg</div><div>Ter</div>
+<div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+</div>
+
+<div id="cal" class="calendar"></div>
+
+<div>📅 <span id="dateSel">Nenhuma</span></div>
+
+<button onclick="addShift()">Salvar Escala</button>
+</div>
+
+<!-- INDISPONIBILIDADE -->
+<div id="tab-un" class="tab card">
+<h3>🚫 Indisponibilidade</h3>
+
+<select id="uSel"></select>
+<input type="date" id="uDate">
+
+<button onclick="addBlock()">Bloquear</button>
+
+<div id="uList"></div>
+</div>
+
+<!-- REL -->
+<div id="tab-rel" class="tab card">
+<h3>Relatório</h3>
+<div id="rel"></div>
+</div>
+
+<!-- PDF -->
+<div id="tab-pdf" class="tab card">
+<h3>PDF</h3>
+<button onclick="exportPDF()">Gerar PDF</button>
+</div>
+
+<script>
+
+let funcs=[], locs=[], shifts={}, block={}, selected=null;
+let currentMonth = new Date();
+
+/* STORAGE */
+function save(){
+ localStorage.setItem('escala', JSON.stringify({funcs,locs,shifts,block}));
+}
+
+function load(){
+ let d=JSON.parse(localStorage.getItem('escala'));
+ if(d){
+  funcs=d.funcs||[];
+  locs=d.locs||[];
+  shifts=d.shifts||{};
+  block=d.block||{};
+ }
+}
+
+/* NAV */
+function show(t){
+ document.querySelectorAll('.tab').forEach(e=>e.style.display='none');
+ document.getElementById('tab-'+t).style.display='block';
+}
+
+/* FORMAT */
+function format(d){
+ let [y,m,da]=d.split('-');
+ return `${da}/${m}/${y}`;
+}
+
+/* FUNC */
+function addFunc(){
+ if(fName.value){
+  funcs.push(fName.value);
+  fName.value='';
+  save();render();
+ }
+}
+
+/* LOC */
+function addLoc(){
+ if(lName.value){
+  locs.push(lName.value);
+  lName.value='';
+  save();render();
+ }
+}
+
+/* CALENDÁRIO */
+function changeMonth(offset){
+ currentMonth.setMonth(currentMonth.getMonth()+offset);
+ renderCal();
+}
+
+function renderCal(){
+
+ cal.innerHTML='';
+
+ let year = currentMonth.getFullYear();
+ let month = currentMonth.getMonth();
+
+ monthTitle.innerText =
+ currentMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).toUpperCase();
+
+ let firstDay = new Date(year, month, 1);
+ let lastDay = new Date(year, month+1, 0);
+
+ for(let i=0;i<firstDay.getDay();i++){
+  cal.innerHTML += `<div></div>`;
+ }
+
+ for(let d=1; d<=lastDay.getDate(); d++){
+
+  let date = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+  let mark = shifts[date] ? "<br><small>📌</small>" : "";
+
+  cal.innerHTML += `
+  <div class="day" onclick="selectDate('${date}',this)">
+   ${String(d).padStart(2,'0')}
+   ${mark}
+  </div>`;
+ }
+}
+
+function selectDate(d,el){
+ selected=d;
+ document.querySelectorAll('.day').forEach(e=>e.classList.remove('selected'));
+ el.classList.add('selected');
+ dateSel.innerText=format(d);
+ render();
+}
+
+/* ESCALA */
+function addShift(){
+ if(!selected) return alert("Selecione uma data");
+
+ if(block[selected]?.includes(String(fSel.value))){
+  return alert("Funcionário indisponível nesse dia!");
+ }
+
+ if(!shifts[selected]) shifts[selected]=[];
+
+ shifts[selected].push({
+  f:fSel.value,
+  l:lSel.value
+ });
+
+ save();render();
+}
+
+/* BLOQUEIO */
+function addBlock(){
+ let f=String(uSel.value), d=uDate.value;
+
+ if(!block[d]) block[d]=[];
+
+ if(!block[d].includes(f)){
+  block[d].push(f);
+ }
+
+ save();render();
+}
+
+function removeBlock(d,f){
+ block[d]=block[d].filter(x=>x!=f);
+ if(!block[d].length) delete block[d];
+
+ save();render();
+}
+
+/* RENDER */
+function render(){
+
+ fList.innerHTML=funcs.map(f=>`<div class="item">${f}</div>`).join('');
+ lList.innerHTML=locs.map(l=>`<div class="item">${l}</div>`).join('');
+
+ // 🔥 FINAL: NOME + (INDISPONÍVEL)
+ fSel.innerHTML = funcs.map((f,i)=>{
+
+  let indisponivel = selected && block[selected]?.includes(String(i));
+
+  return `
+  <option value="${i}" ${indisponivel ? 'disabled style="color:#9ca3af;"' : ''}>
+   ${f}${indisponivel ? ' (Indisponível)' : ''}
+  </option>`;
+
+ }).join('');
+
+ lSel.innerHTML=locs.map(l=>`<option>${l}</option>`).join('');
+
+ uSel.innerHTML=funcs.map((f,i)=>`<option value="${i}">${f}</option>`).join('');
+
+ uList.innerHTML='';
+ for(let d in block){
+  block[d].forEach(f=>{
+   uList.innerHTML+=`
+   <div class="item">
+    ${format(d)} - ${funcs[f]}
+    <button onclick="removeBlock('${d}',${f})" style="background:#ef4444;width:auto">X</button>
+   </div>`;
+  });
+ }
+
+ renderRel();
+ renderCal();
+}
+
+/* REL */
+function renderRel(){
+ rel.innerHTML='';
+ Object.keys(shifts).sort().forEach(d=>{
+  rel.innerHTML+=`<h4>${format(d)}</h4>`;
+  shifts[d].forEach(s=>{
+   rel.innerHTML+=`<div class="item">${funcs[s.f]} - ${s.l}</div>`;
+  });
+ });
+}
+
+/* RESET */
+function resetAll(){
+ if(confirm("Apagar tudo?")){
+  localStorage.clear();
+  location.reload();
+ }
+}
+
+/* PDF */
+function exportPDF(){
+ const { jsPDF } = window.jspdf;
+ const doc = new jsPDF();
+
+ let y = 20;
+
+ doc.text("SECRETARIA DE AGRICULTURA E MEIO AMBIENTE",105,y,{align:"center"});
+ y+=10;
+
+ let datas = Object.keys(shifts).sort();
+
+ datas.forEach(d=>{
+  let dia=new Date(d).toLocaleDateString('pt-BR',{weekday:'long'}).toUpperCase();
+
+  doc.setFillColor(220,220,220);
+  doc.rect(10,y,190,8,"F");
+  doc.text(`${dia} ${format(d)}`,12,y+6);
+
+  y+=8;
+
+  let locais={};
+
+  shifts[d].forEach(s=>{
+   if(!locais[s.l]) locais[s.l]=[];
+   locais[s.l].push(funcs[s.f]);
+  });
+
+  for(let l in locais){
+   doc.setFillColor(180,200,230);
+   doc.rect(10,y,190,8,"F");
+   doc.text(l.toUpperCase(),12,y+6);
+
+   y+=8;
+
+   locais[l].forEach(nome=>{
+    doc.rect(10,y,190,8);
+    doc.text(nome,12,y+6);
+    y+=8;
+   });
+  }
+
+  y+=5;
+
+  if(y>270){
+   doc.addPage();
+   y=20;
+  }
+ });
+
+ doc.save("escala.pdf");
+}
+
+/* INIT */
+load();
+render();
+show('func');
+
+</script>
+
+</body>
+</html>
